@@ -90,6 +90,23 @@
     font-size: 11px; font-weight: 700; background: rgba(0,0,0,.6); color: #fff;
     -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
   }
+  /* Вид «Кнопки»: цветная плашка с крупным названием */
+  .thumb.face {
+    display: flex; align-items: center; justify-content: center; padding: 10px 8px;
+    color: #fff; font-weight: 800; line-height: 1.12; letter-spacing: -.01em;
+    text-shadow: 0 1px 2px rgba(0,0,0,.25); word-break: break-word;
+    box-shadow: inset 0 -4px 0 rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.18);
+  }
+  .face .label {
+    display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .face .kind { position: absolute; left: 8px; top: 6px; font-size: 11px; font-weight: 800; opacity: .75; text-shadow: none; }
+  .swatches { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+  .swatch { aspect-ratio: 1; border-radius: 16px; display: grid; place-items: center; color: #fff; font-size: 22px; font-weight: 800; }
+  .swatch.sel { box-shadow: 0 0 0 3px var(--surface), 0 0 0 6px var(--text); }
+  .seg { display: flex; background: var(--bg); border-radius: 12px; padding: 3px; gap: 3px; }
+  .seg button { flex: 1; height: 40px; border-radius: 10px; font-weight: 600; font-size: 14px; color: var(--muted); }
+  .seg button.on { background: var(--surface-2); color: var(--text); }
   .cap {
     margin-top: 6px; font-size: 12.5px; font-weight: 500; color: #d6d6de;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
@@ -474,7 +491,24 @@ let categories = [];      // список категорий в порядке �
 let tab = lsGet('md.tab', 'all');   // 'all' | 'top' | 'c:<название>'
 let query = '';
 let editMode = false;
-const settings = Object.assign({ loop: false }, lsGet('md.settings', {}));
+const settings = Object.assign({ loop: false, view: 'buttons' }, lsGet('md.settings', {}));
+
+/* Цвета кнопок: насыщенные, чтобы белый текст читался */
+const COLORS = ['#e11d48', '#ea580c', '#ca8a04', '#16a34a', '#0d9488', '#0284c7', '#2563eb', '#7c3aed', '#c026d3', '#475569'];
+function colorOf(it) {
+  if (it.color && COLORS.includes(it.color)) return it.color;
+  let x = 0;
+  for (const ch of it.id) x = (x * 31 + ch.charCodeAt(0)) >>> 0;
+  return COLORS[x % COLORS.length];
+}
+function labelSize(name) {
+  const n = (name || '').length;
+  const longest = Math.max(0, ...(name || '').split(/\s+/).map((w) => w.length));
+  let size = n <= 6 ? 24 : n <= 12 ? 20 : n <= 22 ? 17 : n <= 36 ? 15 : 13;
+  if (longest > 9) size = Math.min(size, 15);   // длинное слово не должно вылезать за край
+  if (longest > 13) size = Math.min(size, 13);
+  return size;
+}
 const urlCache = new Map(); // id -> objectURL файла (для мгновенного старта со звуком)
 
 const byId = (id) => items.find((i) => i.id === id);
@@ -516,6 +550,13 @@ function renderTabs() {
 }
 
 function tileEl(it) {
+  if (settings.view === 'buttons') {
+    const name = it.name || 'Без названия';
+    const face = h('div', { class: 'thumb face', style: `background:${colorOf(it)};font-size:${labelSize(name)}px` },
+      it.kind === 'gif' ? h('span', { class: 'kind' }, 'GIF') : it.kind === 'video' ? h('span', { class: 'kind' }, '▶') : null,
+      h('span', { class: 'label' }, name));
+    return h('button', { class: 'tile', 'data-id': it.id, 'aria-label': name }, face);
+  }
   const thumb = h('div', { class: 'thumb' },
     it.thumb ? h('img', { src: it.thumb, alt: '', draggable: 'false', decoding: 'async', loading: 'lazy' })
              : h('div', { class: 'ph' }, it.kind === 'video' ? '🎬' : '🖼️'),
@@ -947,6 +988,9 @@ function openItemMenu(id) {
     itemHead(it),
     h('div', { class: 'list' },
       h('button', { class: 'row', onclick: () => renameSheet(it) }, icon('pencil'), h('span', { class: 'grow' }, 'Переименовать')),
+      settings.view === 'buttons' ? h('button', { class: 'row', onclick: () => colorSheet(it) },
+        h('span', { style: `width:20px;height:20px;border-radius:6px;flex:0 0 auto;background:${colorOf(it)}` }),
+        h('span', { class: 'grow' }, 'Цвет кнопки')) : null,
       h('button', { class: 'row', onclick: () => categorySheet(it) }, icon('folder'), h('span', { class: 'grow' }, 'Сменить категорию'), h('span', { class: 'sub' }, it.category || 'нет')),
       it.count ? h('button', { class: 'row', onclick: async () => { it.count = 0; await saveItems([it]); closeTop(); render(); toast('Счетчик сброшен'); } }, icon('reset'), h('span', { class: 'grow' }, 'Сбросить счетчик')) : null,
       h('button', { class: 'row danger', onclick: () => deleteSheet(it) }, icon('trash'), h('span', { class: 'grow' }, 'Удалить'))),
@@ -990,6 +1034,17 @@ function categorySheet(it) {
     h('h4', null, 'Или создай новую'),
     input,
     h('button', { class: 'btn primary', onclick: addNew }, 'Создать и перенести'));
+}
+
+function colorSheet(it) {
+  const cur = colorOf(it);
+  openSheet(
+    h('h3', null, 'Цвет кнопки'),
+    h('div', { class: 'swatches' }, COLORS.map((c) => h('button', {
+      class: 'swatch' + (c === cur ? ' sel' : ''), style: `background:${c}`, 'aria-label': c,
+      onclick: async () => { it.color = c; await saveItems([it]); closeTop(); render(); },
+    }, c === cur ? '✓' : ''))),
+    h('button', { class: 'btn', style: 'margin-top:18px', onclick: () => closeTop() }, 'Отмена'));
 }
 
 function deleteSheet(it) {
@@ -1042,6 +1097,16 @@ async function openSettings() {
   }
 
   const loopSw = h('div', { class: 'switch' + (settings.loop ? ' on' : '') });
+  const viewSeg = h('div', { class: 'seg' });
+  const fillSeg = () => {
+    viewSeg.textContent = '';
+    for (const [key, label] of [['buttons', 'Цветные кнопки'], ['previews', 'Превью']]) {
+      viewSeg.append(h('button', { class: settings.view === key ? 'on' : '', onclick: () => {
+        settings.view = key; lsSet('md.settings', settings); fillSeg(); renderGrid();
+      } }, label));
+    }
+  };
+  fillSeg();
   const catList = h('div', { class: 'list' });
   const fillCats = () => {
     catList.textContent = '';
@@ -1071,6 +1136,8 @@ async function openSettings() {
     h('h3', null, 'Настройки'),
     h('h4', { style: 'margin-top:4px' }, 'Хранилище'),
     storageCard,
+    h('h4', null, 'Вид кнопок'),
+    viewSeg,
     h('h4', null, 'Просмотр'),
     h('div', { class: 'list' },
       h('button', { class: 'row', onclick: () => {
@@ -1387,7 +1454,7 @@ async function importZip(file) {
       const item = {
         id: String(m.id), name: String(m.name || 'Мем').slice(0, 80), category: String(m.category || '').slice(0, 30), kind,
         mime: m.mime || blob.type, size: blob.size, duration, thumb, count: +m.count || 0, order: order++,
-        created: +m.created || Date.now(), lastUsed: +m.lastUsed || 0,
+        created: +m.created || Date.now(), lastUsed: +m.lastUsed || 0, color: COLORS.includes(m.color) ? m.color : undefined,
       };
       await putItemWithFile(item, blob);
       items.push(item);
