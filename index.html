@@ -1524,7 +1524,22 @@ $('#btnEdit').addEventListener('click', () => setEditMode(true));
 })();
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloading = false;
+  // Пришла новая версия приложения — тихо перезагрузиться (если не смотрим мем прямо сейчас)
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloading) return;
+    const go = () => { if (!reloading) { reloading = true; location.reload(); } };
+    if (!viewing && !adding && !layers.length) go();
+    else document.addEventListener('visibilitychange', () => { if (document.hidden) go(); }, { once: true });
+  });
+  window.addEventListener('load', async () => {
+    try {
+      const reg = await navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' });
+      // на iPhone приложение часто не закрывается, а уходит в фон — проверяем обновления при возврате
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => {}); });
+    } catch (e) {}
+  });
 }
 </script>
 </body>
