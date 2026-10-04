@@ -1,0 +1,1464 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0e0e11">
+<meta name="color-scheme" content="dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Meme Deck">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<title>Meme Deck</title>
+<style>
+  :root {
+    --bg: #0e0e11;
+    --surface: #18181d;
+    --surface-2: #23232b;
+    --line: #2e2e38;
+    --text: #f2f2f5;
+    --muted: #8d8d99;
+    --accent: #ff3b6b;
+    --accent-2: #7c5cff;
+    --danger: #ff4d5e;
+    --radius: 18px;
+    --safe-t: env(safe-area-inset-top, 0px);
+    --safe-b: env(safe-area-inset-bottom, 0px);
+    --safe-l: env(safe-area-inset-left, 0px);
+    --safe-r: env(safe-area-inset-right, 0px);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+    overscroll-behavior-y: none;
+  }
+  body { min-height: 100dvh; }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  input { font: inherit; color: inherit; }
+  .noselect, .tile, .tabs, .bar, #viewer {
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  }
+  svg { display: block; }
+
+  /* ---------- Вкладки категорий ---------- */
+  header {
+    position: sticky; top: 0; z-index: 10;
+    padding: calc(var(--safe-t) + 8px) 0 8px;
+    background: linear-gradient(var(--bg) 75%, rgba(14,14,17,0));
+  }
+  .tabs {
+    display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none;
+    padding: 0 calc(12px + var(--safe-r)) 0 calc(12px + var(--safe-l));
+    max-width: 640px; margin: 0 auto;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab {
+    flex: 0 0 auto; padding: 9px 15px; border-radius: 999px;
+    background: var(--surface); color: var(--muted); font-weight: 600; font-size: 14px;
+    white-space: nowrap; transition: background .15s, color .15s;
+  }
+  .tab.active { background: var(--text); color: var(--bg); }
+  .tab .n { opacity: .55; font-weight: 500; margin-left: 4px; }
+
+  /* ---------- Сетка ---------- */
+  main {
+    max-width: 640px; margin: 0 auto;
+    padding: 6px calc(12px + var(--safe-r)) calc(110px + var(--safe-b)) calc(12px + var(--safe-l));
+  }
+  #grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px 10px; }
+  .tile { display: block; width: 100%; text-align: center; position: relative; touch-action: manipulation; }
+  .thumb {
+    position: relative; aspect-ratio: 1 / 1; border-radius: var(--radius); overflow: hidden;
+    background: var(--surface-2); transition: transform .12s ease;
+    box-shadow: 0 1px 0 rgba(255,255,255,.04) inset;
+  }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+  .thumb .ph {
+    position: absolute; inset: 0; display: grid; place-items: center; font-size: 34px;
+    background: linear-gradient(135deg, #2a2a35, #1b1b22);
+  }
+  .badge {
+    position: absolute; right: 6px; bottom: 6px; padding: 2px 6px; border-radius: 8px;
+    font-size: 11px; font-weight: 700; background: rgba(0,0,0,.6); color: #fff;
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  }
+  .cap {
+    margin-top: 6px; font-size: 12.5px; font-weight: 500; color: #d6d6de;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    word-break: break-word; min-height: 1.35em;
+  }
+  .tile.pressed .thumb { transform: scale(.94); }
+  .editing .tile .thumb { animation: wiggle .28s ease-in-out infinite alternate; }
+  .editing .tile:nth-child(2n) .thumb { animation-delay: -.14s; }
+  @keyframes wiggle { from { transform: rotate(-1.4deg); } to { transform: rotate(1.4deg); } }
+  .tile.placeholder { opacity: .25; }
+  .tile.placeholder .thumb { animation: none; }
+  .ghost {
+    position: fixed; z-index: 50; pointer-events: none; margin: 0;
+    transition: none; filter: drop-shadow(0 12px 24px rgba(0,0,0,.6));
+  }
+  .ghost .thumb { animation: none !important; transform: scale(1.08); }
+
+  .empty { text-align: center; color: var(--muted); padding: 60px 20px; }
+  .empty .big { font-size: 46px; margin-bottom: 10px; }
+  .empty b { color: var(--text); }
+
+  /* ---------- Нижняя панель (под большой палец) ---------- */
+  .bar {
+    position: fixed; z-index: 20; left: 0; right: 0; bottom: 0;
+    padding: 10px calc(16px + var(--safe-r)) calc(14px + var(--safe-b)) calc(16px + var(--safe-l));
+    display: flex; align-items: flex-end; justify-content: space-between; pointer-events: none;
+    background: linear-gradient(rgba(14,14,17,0), rgba(14,14,17,.92) 45%);
+  }
+  .bar > * { pointer-events: auto; }
+  .tools { display: flex; gap: 10px; }
+  .round {
+    width: 50px; height: 50px; border-radius: 50%; display: grid; place-items: center;
+    background: var(--surface-2); color: var(--text);
+    box-shadow: 0 4px 14px rgba(0,0,0,.35);
+  }
+  .round.on { background: var(--text); color: var(--bg); }
+  .round svg { width: 23px; height: 23px; }
+  .fab {
+    width: 68px; height: 68px; border-radius: 50%; background: var(--accent); color: #fff;
+    display: grid; place-items: center; box-shadow: 0 8px 24px rgba(255,59,107,.38);
+    transition: transform .12s;
+  }
+  .fab:active, .round:active { transform: scale(.92); }
+  .fab svg { width: 32px; height: 32px; }
+  .done-pill {
+    height: 50px; padding: 0 22px; border-radius: 999px; background: var(--text); color: var(--bg);
+    font-weight: 700; box-shadow: 0 4px 14px rgba(0,0,0,.35);
+  }
+
+  .search {
+    position: fixed; z-index: 19; left: 0; right: 0;
+    bottom: calc(82px + var(--safe-b));
+    padding: 0 calc(16px + var(--safe-r)) 0 calc(16px + var(--safe-l));
+    display: none;
+  }
+  .search.open { display: block; }
+  .search-box {
+    max-width: 608px; margin: 0 auto; display: flex; align-items: center; gap: 8px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 0 6px 0 14px;
+    box-shadow: 0 8px 28px rgba(0,0,0,.5);
+  }
+  .search input {
+    flex: 1; min-width: 0; border: 0; outline: 0; background: none; height: 50px; font-size: 16px;
+  }
+  .search .x { width: 38px; height: 38px; border-radius: 50%; color: var(--muted); font-size: 20px; }
+
+  /* ---------- Просмотр на весь экран ---------- */
+  #viewer {
+    position: fixed; inset: 0; z-index: 100; background: #000; display: none;
+    touch-action: none;
+  }
+  #viewer.open { display: block; }
+  #vStage {
+    position: absolute; inset: 0; display: grid; place-items: center; will-change: transform;
+  }
+  #vStage video, #vStage img {
+    width: 100%; height: 100%; object-fit: contain; display: none; background: #000;
+    pointer-events: none;
+  }
+  #vStage .show { display: block; }
+  .v-bottom {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
+    padding: 30px calc(16px + var(--safe-r)) calc(16px + var(--safe-b)) calc(16px + var(--safe-l));
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    background: linear-gradient(rgba(0,0,0,0), rgba(0,0,0,.55));
+    pointer-events: none; transition: opacity .2s;
+  }
+  .v-bottom > * { pointer-events: auto; }
+  .v-name { font-weight: 600; font-size: 14px; color: #ddd; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; pointer-events: none !important; }
+  .chip {
+    flex: 0 0 auto; height: 44px; padding: 0 16px; border-radius: 999px; display: flex; align-items: center; gap: 7px;
+    background: rgba(255,255,255,.14); color: #fff; font-weight: 600; font-size: 14px;
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  }
+  .chip.on { background: #fff; color: #000; }
+  .chip svg { width: 18px; height: 18px; }
+  .v-center {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 3;
+    display: none;
+  }
+  .v-center.show { display: flex; }
+  .v-hint {
+    position: absolute; top: calc(var(--safe-t) + 12px); left: 0; right: 0; text-align: center; z-index: 2;
+    font-size: 12px; color: rgba(255,255,255,.45); pointer-events: none; transition: opacity .6s;
+  }
+  .big-btn {
+    height: 64px; padding: 0 26px; border-radius: 999px; background: #fff; color: #000;
+    font-weight: 700; font-size: 17px; align-items: center; gap: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.5);
+  }
+  .big-btn svg { width: 24px; height: 24px; }
+
+  /* ---------- Нижние шторки (меню, настройки) ---------- */
+  .sheet-wrap { position: fixed; inset: 0; z-index: 80; display: none; }
+  .sheet-wrap.open { display: block; }
+  .backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.55); animation: fade .18s; }
+  .sheet {
+    position: absolute; left: 0; right: 0; bottom: 0; max-height: 88dvh; overflow-y: auto;
+    background: var(--surface); border-radius: 22px 22px 0 0;
+    padding: 8px calc(16px + var(--safe-r)) calc(18px + var(--safe-b)) calc(16px + var(--safe-l));
+    animation: up .22s cubic-bezier(.2,.9,.3,1); overscroll-behavior: contain;
+    max-width: 640px; margin: 0 auto;
+  }
+  @keyframes up { from { transform: translateY(40px); opacity: .4; } }
+  @keyframes fade { from { opacity: 0; } }
+  .grabber { width: 40px; height: 5px; border-radius: 3px; background: var(--line); margin: 2px auto 12px; }
+  .sheet h3 { margin: 4px 2px 12px; font-size: 18px; }
+  .sheet h4 { margin: 20px 2px 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .sheet-head { display: flex; align-items: center; gap: 12px; margin: 0 2px 14px; }
+  .sheet-head img, .sheet-head .ph-sm { width: 52px; height: 52px; border-radius: 12px; object-fit: cover; background: var(--surface-2); flex: 0 0 auto; display: grid; place-items: center; font-size: 22px; }
+  .sheet-head .t { font-weight: 700; font-size: 16px; word-break: break-word; }
+  .sheet-head .s { color: var(--muted); font-size: 13px; }
+  .list { background: var(--surface-2); border-radius: 16px; overflow: hidden; }
+  .row {
+    display: flex; align-items: center; gap: 12px; width: 100%; min-height: 54px; padding: 0 16px;
+    text-align: left; font-size: 16px; border-top: 1px solid var(--line);
+  }
+  .list > .row:first-child { border-top: 0; }
+  .row:active { background: rgba(255,255,255,.05); }
+  .row .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .sub { color: var(--muted); font-size: 14px; }
+  .row.danger { color: var(--danger); }
+  .row svg { width: 20px; height: 20px; flex: 0 0 auto; }
+  .btn {
+    display: block; width: 100%; height: 52px; border-radius: 14px; font-weight: 700; font-size: 16px;
+    background: var(--surface-2); margin-top: 10px;
+  }
+  .btn.primary { background: var(--accent); color: #fff; }
+  .btn.danger { background: var(--danger); color: #fff; }
+  .btn:disabled { opacity: .45; }
+  .field {
+    width: 100%; height: 52px; border-radius: 14px; border: 1px solid var(--line); background: var(--bg);
+    padding: 0 14px; font-size: 16px; outline: 0;
+  }
+  .field:focus { border-color: var(--accent-2); }
+  .meter { height: 10px; border-radius: 5px; background: var(--bg); overflow: hidden; margin: 10px 0 6px; }
+  .meter > div { height: 100%; background: linear-gradient(90deg, var(--accent-2), var(--accent)); border-radius: 5px; }
+  .note { color: var(--muted); font-size: 13px; margin: 8px 2px 0; }
+  .note b { color: var(--text); }
+  .card { background: var(--surface-2); border-radius: 16px; padding: 14px 16px; }
+  .switch { position: relative; width: 50px; height: 30px; border-radius: 15px; background: var(--line); flex: 0 0 auto; transition: background .15s; }
+  .switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff; transition: transform .15s; }
+  .switch.on { background: #34c759; }
+  .switch.on::after { transform: translateX(20px); }
+  .mini { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; color: var(--muted); }
+  .mini svg { width: 18px; height: 18px; }
+  .check { color: var(--accent); font-weight: 800; }
+
+  /* ---------- Тост ---------- */
+  #toast {
+    position: fixed; z-index: 200; left: 50%; bottom: calc(96px + var(--safe-b));
+    transform: translateX(-50%) translateY(10px); opacity: 0; pointer-events: none;
+    background: #fff; color: #000; font-weight: 600; font-size: 14px;
+    padding: 11px 16px; border-radius: 14px; max-width: calc(100vw - 32px); text-align: center;
+    transition: opacity .2s, transform .2s; box-shadow: 0 8px 26px rgba(0,0,0,.45);
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<header>
+  <nav class="tabs" id="tabs"></nav>
+</header>
+
+<main>
+  <div id="grid"></div>
+</main>
+
+<div class="search" id="search">
+  <div class="search-box">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" style="color:var(--muted)"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+    <input id="q" type="search" placeholder="Поиск по названию" autocomplete="off" enterkeyhint="search">
+    <button class="x" id="qClear" aria-label="Очистить">✕</button>
+  </div>
+</div>
+
+<div class="bar" id="bar">
+  <div class="tools" id="tools">
+    <button class="round" id="btnSettings" aria-label="Настройки">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+    </button>
+    <button class="round" id="btnEdit" aria-label="Порядок">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M7 4 4 7M7 4l3 3M17 20V4M17 20l-3-3M17 20l3-3"/></svg>
+    </button>
+    <button class="round" id="btnSearch" aria-label="Поиск">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+    </button>
+  </div>
+  <button class="fab" id="btnAdd" aria-label="Добавить">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+  </button>
+</div>
+
+<input type="file" id="filePick" accept="video/*,image/*,.gif,.mp4,.mov,.m4v,.webm" multiple hidden>
+<input type="file" id="zipPick" accept=".zip,application/zip,application/x-zip-compressed" hidden>
+
+<div id="viewer" aria-hidden="true">
+  <div id="vStage">
+    <video id="vVideo" playsinline webkit-playsinline preload="auto" disableremoteplayback></video>
+    <img id="vImg" alt="">
+  </div>
+  <div class="v-hint" id="vHint">Тап или свайп вниз — закрыть</div>
+  <div class="v-center" id="vCenter"></div>
+  <div class="v-bottom" id="vBottom">
+    <div class="v-name" id="vName"></div>
+    <button class="chip" id="vLoop">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/></svg>
+      Повтор
+    </button>
+  </div>
+</div>
+
+<div class="sheet-wrap" id="sheetWrap">
+  <div class="backdrop" id="sheetBackdrop"></div>
+  <div class="sheet" role="dialog" aria-modal="true">
+    <div class="grabber"></div>
+    <div id="sheetBody"></div>
+  </div>
+</div>
+
+<div id="toast" role="status"></div>
+
+<script>
+'use strict';
+
+/* =========================================================
+   Константы и мелкие помощники
+   ========================================================= */
+const JSZIP_URL = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+const JSZIP_SRI = 'sha512-XMVd28F1oH/O71fzwBnV7HucLxVwtxf26XV8P4wPk26EDxuGZ91N8bsOttmnomcCD3CS5ZMRL50H0GgOHvegtg==';
+const THUMB = 300;            // сторона превью в пикселях
+const LONG_PRESS_MS = 480;    // долгий тап — меню
+const DRAG_HOLD_MS = 170;     // в режиме порядка: подержать и тащить
+const PREFETCH_MAX = 30;      // сколько файлов держать «наготове» для мгновенного старта
+
+const $ = (s) => document.querySelector(s);
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isStandalone = () => navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+
+function h(tag, props, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(props || {})) {
+    if (v == null || v === false) continue;
+    if (k === 'class') el.className = v;
+    else if (k === 'style') el.style.cssText = v;
+    else if (k === 'html') el.innerHTML = v;
+    else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+    else if (k === 'value') el.value = v;
+    else el.setAttribute(k, v === true ? '' : v);
+  }
+  for (const c of kids.flat()) if (c != null && c !== false) el.append(c.nodeType ? c : String(c));
+  return el;
+}
+const ICON = {
+  pencil: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg>',
+  folder: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2h8.5A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
+  reset: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>',
+  sound: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg>',
+  play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg>',
+  replay: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>',
+  plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+};
+const icon = (name) => h('span', { html: ICON[name], style: 'display:contents' });
+
+function uid() {
+  return (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2)).replace(/-/g, '').slice(0, 16);
+}
+function fmtBytes(b) {
+  if (!b) return '0 МБ';
+  if (b < 1024 * 1024) return (b / 1024).toFixed(0) + ' КБ';
+  if (b < 1024 ** 3) return (b / 1024 / 1024).toFixed(b < 10 * 1024 * 1024 ? 1 : 0) + ' МБ';
+  return (b / 1024 ** 3).toFixed(2) + ' ГБ';
+}
+function fmtDur(s) {
+  if (!s || !isFinite(s)) return '';
+  s = Math.round(s);
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+function plural(n, one, few, many) {
+  const m10 = n % 10, m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return one;
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+  return many;
+}
+const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+
+let toastTimer;
+function toast(msg, ms = 2200) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  if (ms) toastTimer = setTimeout(() => t.classList.remove('show'), ms);
+}
+const vibrate = (ms = 12) => { try { navigator.vibrate && navigator.vibrate(ms); } catch (e) {} };
+
+/* =========================================================
+   IndexedDB: items (описание + превью), files (сами файлы), kv (настройки)
+   ========================================================= */
+let db;
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const r = indexedDB.open('memedeck', 1);
+    r.onupgradeneeded = () => {
+      const d = r.result;
+      if (!d.objectStoreNames.contains('items')) d.createObjectStore('items', { keyPath: 'id' });
+      if (!d.objectStoreNames.contains('files')) d.createObjectStore('files', { keyPath: 'id' });
+      if (!d.objectStoreNames.contains('kv')) d.createObjectStore('kv');
+    };
+    r.onsuccess = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+  });
+}
+const reqP = (r) => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+const txDone = (t) => new Promise((res, rej) => { t.oncomplete = () => res(); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error || new Error('abort')); });
+const dbAll = (store) => reqP(db.transaction(store).objectStore(store).getAll());
+const kvGet = (k) => reqP(db.transaction('kv').objectStore('kv').get(k));
+const kvSet = (k, v) => { const t = db.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); return txDone(t); };
+
+function saveItems(list) {
+  const t = db.transaction('items', 'readwrite');
+  const s = t.objectStore('items');
+  for (const it of list) s.put(it);
+  return txDone(t);
+}
+async function putItemWithFile(item, blob) {
+  try {
+    const t = db.transaction(['items', 'files'], 'readwrite');
+    t.objectStore('items').put(item);
+    t.objectStore('files').put({ id: item.id, blob });
+    await txDone(t);
+  } catch (e) {
+    if (isQuota(e)) throw e;
+    // Старые Safari иногда не умеют класть Blob в IndexedDB — тогда кладем как ArrayBuffer
+    const buf = await blob.arrayBuffer();
+    const t = db.transaction(['items', 'files'], 'readwrite');
+    t.objectStore('items').put(item);
+    t.objectStore('files').put({ id: item.id, buf, type: blob.type });
+    await txDone(t);
+  }
+}
+async function getBlob(id) {
+  const rec = await reqP(db.transaction('files').objectStore('files').get(id));
+  if (!rec) return null;
+  return rec.blob || new Blob([rec.buf], { type: rec.type || '' });
+}
+function deleteItemDB(id) {
+  const t = db.transaction(['items', 'files'], 'readwrite');
+  t.objectStore('items').delete(id);
+  t.objectStore('files').delete(id);
+  return txDone(t);
+}
+const isQuota = (e) => e && (e.name === 'QuotaExceededError' || /quota/i.test(e.message || ''));
+
+/* =========================================================
+   Состояние
+   ========================================================= */
+let items = [];           // все мемы, отсортированы по order
+let categories = [];      // список категорий в порядке вкладок
+let tab = lsGet('md.tab', 'all');   // 'all' | 'top' | 'c:<название>'
+let query = '';
+let editMode = false;
+const settings = Object.assign({ loop: false }, lsGet('md.settings', {}));
+const urlCache = new Map(); // id -> objectURL файла (для мгновенного старта со звуком)
+
+const byId = (id) => items.find((i) => i.id === id);
+const sortItems = () => items.sort((a, b) => a.order - b.order);
+const nextOrder = () => (items.length ? Math.max(...items.map((i) => i.order)) + 1 : 0);
+const currentCategory = () => (tab.startsWith('c:') ? tab.slice(2) : '');
+
+function syncCategories() {
+  for (const it of items) if (it.category && !categories.includes(it.category)) categories.push(it.category);
+  return kvSet('categories', categories);
+}
+
+/* =========================================================
+   Отрисовка
+   ========================================================= */
+function visibleItems() {
+  let list = items;
+  if (tab === 'top') list = items.filter((i) => i.count > 0).sort((a, b) => b.count - a.count || a.order - b.order);
+  else if (tab.startsWith('c:')) list = items.filter((i) => i.category === tab.slice(2));
+  if (query) {
+    const q = query.toLowerCase();
+    list = list.filter((i) => i.name.toLowerCase().includes(q));
+  }
+  return list;
+}
+
+function renderTabs() {
+  if (tab.startsWith('c:') && !categories.includes(tab.slice(2))) tab = 'all';
+  const tabs = $('#tabs');
+  tabs.textContent = '';
+  const mk = (key, label, n) => h('button', {
+    class: 'tab' + (tab === key ? ' active' : ''),
+    onclick: () => { tab = key; lsSet('md.tab', tab); render(); },
+  }, label, n != null ? h('span', { class: 'n' }, n) : null);
+  tabs.append(mk('all', 'Все', items.length || null), mk('top', '🔥 Частые'));
+  for (const c of categories) tabs.append(mk('c:' + c, c, items.filter((i) => i.category === c).length || null));
+  const active = tabs.querySelector('.active');
+  if (active) active.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+
+function tileEl(it) {
+  const thumb = h('div', { class: 'thumb' },
+    it.thumb ? h('img', { src: it.thumb, alt: '', draggable: 'false', decoding: 'async', loading: 'lazy' })
+             : h('div', { class: 'ph' }, it.kind === 'video' ? '🎬' : '🖼️'),
+    it.kind === 'gif' ? h('span', { class: 'badge' }, 'GIF')
+      : it.kind === 'video' && it.duration ? h('span', { class: 'badge' }, '▶ ' + fmtDur(it.duration)) : null);
+  return h('button', { class: 'tile', 'data-id': it.id }, thumb, h('div', { class: 'cap' }, it.name || 'Без названия'));
+}
+
+function renderGrid() {
+  const grid = $('#grid');
+  const list = visibleItems();
+  grid.textContent = '';
+  grid.classList.toggle('editing', editMode);
+  if (!list.length) {
+    let msg;
+    if (query) msg = [h('div', { class: 'big' }, '🔍'), 'Ничего не нашлось по запросу «', h('b', null, query), '»'];
+    else if (!items.length) msg = [h('div', { class: 'big' }, '🃏'), h('b', null, 'Дека пустая'), h('br'), 'Нажми ', h('b', null, '+'), ' внизу справа и выбери видео, картинки или гифки из галереи.',
+      isIOS && !isStandalone() ? h('p', { class: 'note', style: 'margin-top:18px' }, 'Совет: установи на экран «Домой» (Поделиться → «На экран Домой»), так файлы надежнее хранятся.') : null];
+    else if (tab === 'top') msg = [h('div', { class: 'big' }, '🔥'), 'Тут появятся мемы, которые ты включаешь чаще всего.'];
+    else msg = [h('div', { class: 'big' }, '📂'), 'В этой категории пока пусто.', h('br'), 'Нажми ', h('b', null, '+'), ' — новые мемы сразу попадут сюда.'];
+    grid.append(h('div', { class: 'empty', style: 'grid-column:1/-1' }, ...msg));
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  for (const it of list) frag.append(tileEl(it));
+  grid.append(frag);
+  schedulePrefetch(list);
+}
+
+function renderBar() {
+  const tools = $('#tools');
+  tools.style.display = editMode ? 'none' : '';
+  let done = $('#btnDone');
+  if (editMode && !done) {
+    done = h('button', { class: 'done-pill', id: 'btnDone', onclick: () => setEditMode(false) }, 'Готово');
+    $('#bar').prepend(done);
+  } else if (!editMode && done) done.remove();
+  $('#btnAdd').style.visibility = editMode ? 'hidden' : '';
+  $('#btnSearch').classList.toggle('on', !!query || $('#search').classList.contains('open'));
+}
+
+function render() {
+  renderTabs();
+  renderGrid();
+  renderBar();
+}
+
+function setEditMode(on) {
+  editMode = on;
+  if (on) {
+    closeSearch(false);
+    toast(tab === 'top' ? 'В «Частых» порядок по нажатиям — переключись на другую вкладку' : 'Подержи мем и перетащи. Тап — меню.', 2600);
+  }
+  render();
+}
+
+/* Заранее готовим ссылки на файлы, чтобы видео стартовало прямо в момент тапа (важно для звука на iOS) */
+let prefetchTimer;
+function schedulePrefetch(list) {
+  clearTimeout(prefetchTimer);
+  prefetchTimer = setTimeout(async () => {
+    const want = list.slice(0, PREFETCH_MAX).filter((i) => !urlCache.has(i.id));
+    for (const it of want) {
+      try {
+        const b = await getBlob(it.id);
+        if (b && !urlCache.has(it.id)) urlCache.set(it.id, URL.createObjectURL(b));
+      } catch (e) {}
+    }
+    // не держим слишком много
+    if (urlCache.size > PREFETCH_MAX * 3) {
+      const keep = new Set(list.slice(0, PREFETCH_MAX).map((i) => i.id));
+      for (const [id, url] of urlCache) {
+        if (urlCache.size <= PREFETCH_MAX * 2) break;
+        if (!keep.has(id)) { URL.revokeObjectURL(url); urlCache.delete(id); }
+      }
+    }
+  }, 250);
+}
+function dropUrl(id) {
+  const u = urlCache.get(id);
+  if (u) { URL.revokeObjectURL(u); urlCache.delete(id); }
+}
+
+/* =========================================================
+   «Слои» поверх сетки + кнопка «Назад» на Android
+   ========================================================= */
+const layers = [];
+function pushLayer(name) {
+  layers.push(name);
+  try { history.pushState({ md: name }, ''); } catch (e) {}
+}
+function closeTop() {
+  if (!layers.length) return;
+  if (history.state && history.state.md) history.back();
+  else onLayerPopped();
+}
+function onLayerPopped() {
+  const top = layers.pop();
+  if (top === 'viewer') closeViewerNow();
+  else if (top === 'sheet') closeSheetNow();
+}
+window.addEventListener('popstate', () => { if (layers.length) onLayerPopped(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeTop(); });
+
+/* =========================================================
+   Нажатия на плитки: тап — открыть, долгий тап — меню, в режиме порядка — перетаскивание
+   ========================================================= */
+const grid = $('#grid');
+let press = null;     // текущее нажатие
+let drag = null;      // текущее перетаскивание
+let suppressClick = false;
+
+grid.addEventListener('contextmenu', (e) => e.preventDefault());
+
+grid.addEventListener('pointerdown', (e) => {
+  const tile = e.target.closest('.tile');
+  if (!tile || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  suppressClick = false;
+  const p = press = { tile, id: tile.dataset.id, x: e.clientX, y: e.clientY };
+  if (editMode) {
+    if (tab === 'top') return;
+    p.timer = setTimeout(() => startDrag(p), e.pointerType === 'mouse' ? 0 : DRAG_HOLD_MS);
+  } else {
+    tile.classList.add('pressed');
+    p.timer = setTimeout(() => {
+      if (press !== p) return;
+      press = null;
+      tile.classList.remove('pressed');
+      suppressClick = true;
+      vibrate();
+      openItemMenu(p.id);
+    }, LONG_PRESS_MS);
+  }
+});
+
+function cancelPress() {
+  if (!press) return;
+  clearTimeout(press.timer);
+  press.tile.classList.remove('pressed');
+  press = null;
+}
+window.addEventListener('pointermove', (e) => {
+  if (drag) return moveDrag(e);
+  if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 10) cancelPress();
+}, { passive: true });
+window.addEventListener('pointerup', (e) => {
+  if (drag) return endDrag(e);
+  if (press) { clearTimeout(press.timer); press.tile.classList.remove('pressed'); press = null; }
+});
+window.addEventListener('pointercancel', () => {
+  if (drag) return endDrag(null);
+  cancelPress();
+});
+// Пока тащим — не даем странице скроллиться
+document.addEventListener('touchmove', (e) => { if (drag) e.preventDefault(); }, { passive: false });
+
+// click — самый надежный «жест пользователя» для запуска звука в iOS Safari
+grid.addEventListener('click', (e) => {
+  const tile = e.target.closest('.tile');
+  if (!tile) return;
+  if (suppressClick) { suppressClick = false; return; }
+  if (editMode) openItemMenu(tile.dataset.id);
+  else openViewer(tile.dataset.id);
+});
+
+function startDrag(p) {
+  if (!p || press !== p) return;
+  press = null;
+  const tile = p.tile;
+  const r = tile.getBoundingClientRect();
+  const ghost = tile.cloneNode(true);
+  ghost.classList.add('ghost');
+  Object.assign(ghost.style, { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px' });
+  document.body.append(ghost);
+  tile.classList.add('placeholder');
+  drag = { tile, ghost, sx: p.x, sy: p.y, moved: false, lastY: p.y, scrollTimer: null, scroll0: scrollY };
+  vibrate(8);
+  drag.scrollTimer = setInterval(autoScroll, 16);
+}
+function moveDrag(e) {
+  const d = drag;
+  if (!d.moved && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) > 4) d.moved = true;
+  d.lastX = e.clientX; d.lastY = e.clientY;
+  positionGhost();
+  const under = document.elementFromPoint(e.clientX, e.clientY);
+  const target = under && under.closest('.tile');
+  if (target && target !== d.tile && target.parentNode === grid) {
+    const tiles = [...grid.children];
+    if (tiles.indexOf(d.tile) < tiles.indexOf(target)) target.after(d.tile);
+    else target.before(d.tile);
+  }
+}
+function positionGhost() {
+  const d = drag;
+  if (d.lastX == null) return;
+  d.ghost.style.transform = `translate(${d.lastX - d.sx}px, ${d.lastY - d.sy}px)`;
+}
+function autoScroll() {
+  if (!drag || drag.lastY == null) return;
+  const y = drag.lastY, H = innerHeight;
+  let dy = 0;
+  if (y < 90) dy = -Math.ceil((90 - y) / 6);
+  else if (y > H - 130) dy = Math.ceil((y - (H - 130)) / 6);
+  if (dy) scrollBy(0, dy);
+}
+async function endDrag(e) {
+  const d = drag;
+  drag = null;
+  clearInterval(d.scrollTimer);
+  d.ghost.remove();
+  d.tile.classList.remove('placeholder');
+  suppressClick = true;
+  setTimeout(() => { suppressClick = false; }, 350);
+  if (!d.moved) { suppressClick = false; return; }
+  // Переставленные мемы занимают те же «слоты» порядка, что и раньше — работает и внутри категории, и в поиске
+  const ids = [...grid.querySelectorAll('.tile')].map((t) => t.dataset.id);
+  const vis = ids.map(byId).filter(Boolean);
+  const slots = vis.map((i) => i.order).sort((a, b) => a - b);
+  const changed = [];
+  vis.forEach((it, k) => { if (it.order !== slots[k]) { it.order = slots[k]; changed.push(it); } });
+  sortItems();
+  if (changed.length) await saveItems(changed);
+}
+
+/* =========================================================
+   Просмотр на весь экран
+   ========================================================= */
+const viewer = $('#viewer'), vStage = $('#vStage'), vVideo = $('#vVideo'), vImg = $('#vImg');
+const vCenter = $('#vCenter'), vLoop = $('#vLoop');
+let viewing = null;
+
+function setLoopUI() {
+  vLoop.classList.toggle('on', settings.loop);
+  vVideo.loop = settings.loop;
+}
+vLoop.addEventListener('click', (e) => {
+  e.stopPropagation();
+  settings.loop = !settings.loop;
+  lsSet('md.settings', settings);
+  setLoopUI();
+  if (settings.loop && vVideo.ended) vVideo.play().catch(() => {});
+  toast(settings.loop ? 'Повтор включен' : 'Повтор выключен', 1200);
+});
+
+function centerButton(kind) {
+  vCenter.textContent = '';
+  vCenter.classList.remove('show');
+  if (!kind) return;
+  const map = {
+    unmute: ['sound', 'Включить звук', () => { vVideo.muted = false; vVideo.play().catch(() => {}); centerButton(null); }],
+    play: ['play', 'Смотреть', () => { vVideo.muted = false; vVideo.play().then(() => centerButton(null)).catch(() => {}); }],
+    replay: ['replay', 'Еще раз', () => { vVideo.currentTime = 0; vVideo.play().catch(() => {}); centerButton(null); }],
+  };
+  const [ic, label, fn] = map[kind];
+  const b = h('button', { class: 'big-btn', style: 'display:flex', onclick: (e) => { e.stopPropagation(); fn(); } }, icon(ic), label);
+  b.addEventListener('pointerdown', (e) => e.stopPropagation());
+  vCenter.append(b);
+  vCenter.classList.add('show');
+}
+
+function startVideo(url) {
+  vVideo.loop = settings.loop;
+  vVideo.muted = false;
+  vVideo.src = url;
+  vVideo.classList.add('show');
+  const p = vVideo.play();
+  if (p && p.catch) {
+    p.catch((err) => {
+      if (!viewing) return;
+      if (err && err.name === 'NotAllowedError') {
+        // Браузер не дал включить звук без тапа — запускаем без звука и показываем кнопку
+        vVideo.muted = true;
+        vVideo.play().then(() => centerButton('unmute')).catch(() => centerButton('play'));
+      } else if (err && err.name !== 'AbortError') {
+        toast('Этот формат видео не поддерживается браузером', 3000);
+      }
+    });
+  }
+}
+
+async function openViewer(id) {
+  const it = byId(id);
+  if (!it) return;
+  viewing = it;
+  $('#toast').classList.remove('show');
+  centerButton(null);
+  vStage.style.transform = '';
+  viewer.style.background = '#000';
+  $('#vName').textContent = it.name;
+  vLoop.style.display = it.kind === 'video' ? '' : 'none';
+  setLoopUI();
+  const hint = $('#vHint');
+  const hintSeen = lsGet('md.hintSeen', 0);
+  hint.style.display = hintSeen > 3 ? 'none' : '';
+  hint.style.opacity = '1';
+  setTimeout(() => { hint.style.opacity = '0'; }, 1600);
+  lsSet('md.hintSeen', hintSeen + 1);
+
+  viewer.classList.add('open');
+  viewer.setAttribute('aria-hidden', 'false');
+  pushLayer('viewer');
+
+  // Сначала — синхронный старт (если ссылка уже готова), это сохраняет «жест» для звука
+  let url = urlCache.get(id);
+  if (url) show(url);
+  else {
+    try {
+      const blob = await getBlob(id);
+      if (viewing !== it) return;
+      if (!blob) { toast('Файл не найден'); closeTop(); return; }
+      url = URL.createObjectURL(blob);
+      urlCache.set(id, url);
+      show(url);
+    } catch (e) { toast('Не удалось открыть файл'); closeTop(); return; }
+  }
+  function show(u) {
+    if (it.kind === 'video') {
+      vImg.classList.remove('show');
+      startVideo(u);
+    } else {
+      vVideo.classList.remove('show');
+      vImg.src = u;
+      vImg.classList.add('show');
+    }
+  }
+  it.count = (it.count || 0) + 1;
+  it.lastUsed = Date.now();
+  saveItems([it]).catch(() => {});
+}
+
+function closeViewerNow() {
+  viewing = null;
+  vVideo.pause();
+  vVideo.removeAttribute('src');
+  vVideo.load();
+  vVideo.classList.remove('show');
+  vImg.removeAttribute('src');
+  vImg.classList.remove('show');
+  centerButton(null);
+  viewer.classList.remove('open');
+  viewer.setAttribute('aria-hidden', 'true');
+  if (tab === 'top') renderGrid(); // счетчики поменялись
+}
+
+vVideo.addEventListener('ended', () => { if (!settings.loop && viewing) centerButton('replay'); });
+vVideo.addEventListener('error', () => { if (viewing && vVideo.getAttribute('src')) toast('Не получается воспроизвести это видео', 3000); });
+
+// Тап — закрыть, свайп вниз — закрыть с анимацией
+let sw = null;
+let swipeMoved = false;
+viewer.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('button')) return;
+  sw = { x: e.clientX, y: e.clientY, t: performance.now(), dy: 0, dx: 0, id: e.pointerId };
+  swipeMoved = false;
+  vStage.style.transition = 'none';
+});
+viewer.addEventListener('pointermove', (e) => {
+  if (!sw || e.pointerId !== sw.id) return;
+  sw.dy = Math.max(0, e.clientY - sw.y);
+  sw.dx = e.clientX - sw.x;
+  if (sw.dy > 4) {
+    vStage.style.transform = `translateY(${sw.dy}px) scale(${1 - Math.min(sw.dy / 2000, .15)})`;
+    viewer.style.background = `rgba(0,0,0,${Math.max(0, 1 - sw.dy / 500)})`;
+    $('#vBottom').style.opacity = String(Math.max(0, 1 - sw.dy / 150));
+  }
+});
+function endSwipe(e, cancelled) {
+  if (!sw) return;
+  const s = sw;
+  sw = null;
+  const dt = performance.now() - s.t;
+  const fast = s.dy > 40 && s.dy / dt > 0.6;
+  vStage.style.transition = 'transform .2s ease';
+  $('#vBottom').style.opacity = '';
+  if (!cancelled && (s.dy > 120 || fast)) {
+    swipeMoved = true;
+    vStage.style.transform = `translateY(${innerHeight}px)`;
+    viewer.style.transition = 'background .2s';
+    viewer.style.background = 'rgba(0,0,0,0)';
+    setTimeout(() => { viewer.style.transition = ''; vStage.style.transition = ''; closeTop(); }, 180);
+    return;
+  }
+  vStage.style.transform = '';
+  viewer.style.background = '#000';
+  swipeMoved = s.dy >= 10 || Math.abs(s.dx || 0) >= 10;
+}
+// Закрытие тапом — по click, чтобы «хвост» нажатия не открыл мем под пальцем заново
+viewer.addEventListener('click', (e) => {
+  if (e.target.closest('button')) return;
+  if (swipeMoved) { swipeMoved = false; return; }
+  if (viewing) closeTop();
+});
+viewer.addEventListener('pointerup', (e) => endSwipe(e, false));
+viewer.addEventListener('pointercancel', (e) => endSwipe(e, true));
+document.addEventListener('visibilitychange', () => { if (document.hidden && viewing) vVideo.pause(); });
+
+/* =========================================================
+   Шторки: меню мема, настройки, бэкап
+   ========================================================= */
+const sheetWrap = $('#sheetWrap'), sheetBody = $('#sheetBody');
+function openSheet(...content) {
+  sheetBody.textContent = '';
+  sheetBody.append(...content);
+  if (!sheetWrap.classList.contains('open')) {
+    sheetWrap.classList.add('open');
+    pushLayer('sheet');
+  }
+  sheetWrap.querySelector('.sheet').scrollTop = 0;
+}
+function closeSheetNow() {
+  sheetWrap.classList.remove('open');
+  sheetBody.textContent = '';
+}
+$('#sheetBackdrop').addEventListener('click', () => closeTop());
+
+function itemHead(it) {
+  const sub = [it.kind === 'video' ? 'Видео ' + fmtDur(it.duration) : it.kind === 'gif' ? 'GIF' : 'Картинка', fmtBytes(it.size),
+    it.count ? `${it.count} ${plural(it.count, 'запуск', 'запуска', 'запусков')}` : null].filter(Boolean).join(' · ');
+  return h('div', { class: 'sheet-head' },
+    it.thumb ? h('img', { src: it.thumb, alt: '' }) : h('div', { class: 'ph-sm' }, '🎬'),
+    h('div', null, h('div', { class: 't' }, it.name || 'Без названия'), h('div', { class: 's' }, sub, it.category ? ' · ' + it.category : '')));
+}
+
+function openItemMenu(id) {
+  const it = byId(id);
+  if (!it) return;
+  cancelPress();
+  openSheet(
+    itemHead(it),
+    h('div', { class: 'list' },
+      h('button', { class: 'row', onclick: () => renameSheet(it) }, icon('pencil'), h('span', { class: 'grow' }, 'Переименовать')),
+      h('button', { class: 'row', onclick: () => categorySheet(it) }, icon('folder'), h('span', { class: 'grow' }, 'Сменить категорию'), h('span', { class: 'sub' }, it.category || 'нет')),
+      it.count ? h('button', { class: 'row', onclick: async () => { it.count = 0; await saveItems([it]); closeTop(); render(); toast('Счетчик сброшен'); } }, icon('reset'), h('span', { class: 'grow' }, 'Сбросить счетчик')) : null,
+      h('button', { class: 'row danger', onclick: () => deleteSheet(it) }, icon('trash'), h('span', { class: 'grow' }, 'Удалить'))),
+    h('button', { class: 'btn', onclick: () => closeTop() }, 'Отмена'));
+}
+
+function renameSheet(it) {
+  const input = h('input', { class: 'field', value: it.name, maxlength: '80', enterkeyhint: 'done', autocomplete: 'off' });
+  const save = async () => {
+    const v = input.value.trim();
+    if (!v) return input.focus();
+    it.name = v;
+    await saveItems([it]);
+    closeTop();
+    render();
+  };
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
+  openSheet(h('h3', null, 'Название'), input, h('button', { class: 'btn primary', onclick: save }, 'Сохранить'), h('button', { class: 'btn', onclick: () => closeTop() }, 'Отмена'));
+  input.focus();
+  input.select();
+}
+
+function categorySheet(it) {
+  const setCat = async (c) => {
+    it.category = c;
+    if (c && !categories.includes(c)) categories.push(c);
+    await saveItems([it]);
+    await syncCategories();
+    closeTop();
+    render();
+    toast(c ? `Перенесено в «${c}»` : 'Категория убрана');
+  };
+  const input = h('input', { class: 'field', placeholder: 'Новая категория', maxlength: '30', enterkeyhint: 'done', autocomplete: 'off' });
+  const addNew = () => { const v = input.value.trim(); if (v) setCat(v); else input.focus(); };
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') addNew(); });
+  openSheet(
+    h('h3', null, 'Категория'),
+    h('div', { class: 'list' },
+      h('button', { class: 'row', onclick: () => setCat('') }, h('span', { class: 'grow' }, 'Без категории'), !it.category ? h('span', { class: 'check' }, '✓') : null),
+      categories.map((c) => h('button', { class: 'row', onclick: () => setCat(c) }, h('span', { class: 'grow' }, c), it.category === c ? h('span', { class: 'check' }, '✓') : null))),
+    h('h4', null, 'Или создай новую'),
+    input,
+    h('button', { class: 'btn primary', onclick: addNew }, 'Создать и перенести'));
+}
+
+function deleteSheet(it) {
+  openSheet(
+    itemHead(it),
+    h('p', { style: 'margin:4px 2px 6px' }, 'Удалить этот мем с телефона? Отменить будет нельзя.'),
+    h('button', { class: 'btn danger', onclick: async () => {
+      await deleteItemDB(it.id);
+      dropUrl(it.id);
+      items = items.filter((x) => x.id !== it.id);
+      closeTop();
+      render();
+      toast('Удалено');
+    } }, 'Удалить'),
+    h('button', { class: 'btn', onclick: () => closeTop() }, 'Отмена'));
+}
+
+/* ---------- Настройки ---------- */
+async function openSettings() {
+  const total = items.reduce((s, i) => s + (i.size || 0), 0);
+  let est = null, persisted = null;
+  try { est = navigator.storage && navigator.storage.estimate ? await navigator.storage.estimate() : null; } catch (e) {}
+  try { persisted = navigator.storage && navigator.storage.persisted ? await navigator.storage.persisted() : null; } catch (e) {}
+
+  const storageCard = h('div', { class: 'card' });
+  const used = est && est.usage != null ? est.usage : total;
+  storageCard.append(
+    h('div', { style: 'display:flex;justify-content:space-between;font-weight:600' },
+      h('span', null, 'Занято: ' + fmtBytes(used)),
+      est && est.quota ? h('span', { style: 'color:var(--muted);font-weight:500' }, 'из ' + fmtBytes(est.quota)) : null));
+  if (est && est.quota) {
+    const pct = Math.min(100, (used / est.quota) * 100);
+    storageCard.append(h('div', { class: 'meter' }, h('div', { style: `width:${Math.max(pct, 1.5)}%` })));
+  }
+  storageCard.append(h('div', { class: 'note', style: 'margin:6px 0 0' },
+    `${items.length} ${plural(items.length, 'мем', 'мема', 'мемов')} · файлы ${fmtBytes(total)}`));
+  storageCard.append(h('div', { class: 'note', style: 'margin:6px 0 0' },
+    persisted ? '✅ Хранилище защищено: браузер не удалит файлы сам.'
+      : persisted === false ? (isIOS
+        ? (isStandalone() ? 'ℹ️ Приложение установлено на экран «Домой» — iOS не чистит его данные автоматически. Но удаление приложения с экрана сотрет и мемы, держи бэкап.'
+                          : '⚠️ Safari может удалить данные сайта, если долго не открывать. Установи на экран «Домой»: Поделиться → «На экран Домой».')
+        : '⚠️ Браузер пока не подтвердил защиту от очистки. Установи приложение на главный экран — тогда обычно подтверждает.')
+      : ''));
+  if (persisted === false && !isIOS) {
+    storageCard.append(h('button', { class: 'btn', onclick: async () => {
+      const ok = await requestPersist();
+      toast(ok ? 'Готово, хранилище защищено' : 'Браузер пока отказал — установи приложение и попробуй снова', 3000);
+      openSettings();
+    } }, 'Защитить хранилище'));
+  }
+
+  const loopSw = h('div', { class: 'switch' + (settings.loop ? ' on' : '') });
+  const catList = h('div', { class: 'list' });
+  const fillCats = () => {
+    catList.textContent = '';
+    if (!categories.length) catList.append(h('div', { class: 'row', style: 'color:var(--muted)' }, 'Пока нет категорий'));
+    for (const c of categories) {
+      const n = items.filter((i) => i.category === c).length;
+      catList.append(h('div', { class: 'row' },
+        h('span', { class: 'grow' }, c), h('span', { class: 'sub' }, n),
+        h('button', { class: 'mini', 'aria-label': 'Переименовать', html: ICON.pencil, onclick: () => renameCategorySheet(c) }),
+        h('button', { class: 'mini', 'aria-label': 'Удалить', html: ICON.trash, onclick: () => deleteCategorySheet(c) })));
+    }
+  };
+  fillCats();
+  const newCat = h('input', { class: 'field', placeholder: 'Новая категория', maxlength: '30', enterkeyhint: 'done', autocomplete: 'off', style: 'margin-top:10px' });
+  const addCat = async () => {
+    const v = newCat.value.trim();
+    if (!v) return newCat.focus();
+    if (!categories.includes(v)) categories.push(v);
+    await kvSet('categories', categories);
+    newCat.value = '';
+    fillCats();
+    renderTabs();
+  };
+  newCat.addEventListener('keydown', (e) => { if (e.key === 'Enter') addCat(); });
+
+  openSheet(
+    h('h3', null, 'Настройки'),
+    h('h4', { style: 'margin-top:4px' }, 'Хранилище'),
+    storageCard,
+    h('h4', null, 'Просмотр'),
+    h('div', { class: 'list' },
+      h('button', { class: 'row', onclick: () => {
+        settings.loop = !settings.loop; lsSet('md.settings', settings); loopSw.classList.toggle('on', settings.loop);
+      } }, h('span', { class: 'grow' }, 'Повтор видео по кругу'), loopSw)),
+    h('h4', null, 'Категории'),
+    catList,
+    newCat,
+    h('button', { class: 'btn', onclick: addCat }, 'Добавить категорию'),
+    h('h4', null, 'Бэкап'),
+    h('div', { class: 'list' },
+      h('button', { class: 'row', onclick: exportZip, disabled: !items.length }, h('span', { class: 'grow' }, '⬇️  Экспорт в ZIP'), h('span', { class: 'sub' }, fmtBytes(total))),
+      h('button', { class: 'row', onclick: () => $('#zipPick').click() }, h('span', { class: 'grow' }, '⬆️  Импорт из ZIP'))),
+    h('p', { class: 'note' }, 'Экспорт собирает все мемы в один файл. Сохрани его в «Файлы» / Google Drive — с ним можно перенести деку на другой телефон. При импорте мемы добавляются к текущим, дубли пропускаются.'),
+    isIOS ? h('p', { class: 'note' }, 'На iPhone архив собирается в памяти: если коллекция больше ~1 ГБ, экспорт может не пройти.') : null,
+    h('p', { class: 'note', style: 'margin-top:22px;text-align:center' }, 'Meme Deck · все хранится только на этом устройстве'));
+}
+
+function renameCategorySheet(c) {
+  const input = h('input', { class: 'field', value: c, maxlength: '30', enterkeyhint: 'done', autocomplete: 'off' });
+  const save = async () => {
+    const v = input.value.trim();
+    if (!v) return input.focus();
+    if (v !== c) {
+      const changed = items.filter((i) => i.category === c);
+      changed.forEach((i) => { i.category = v; });
+      await saveItems(changed);
+      categories = categories.includes(v) ? categories.filter((x) => x !== c) : categories.map((x) => (x === c ? v : x));
+      await kvSet('categories', categories);
+      if (tab === 'c:' + c) { tab = 'c:' + v; lsSet('md.tab', tab); }
+      render();
+    }
+    openSettings();
+  };
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
+  openSheet(h('h3', null, 'Переименовать категорию'), input,
+    h('button', { class: 'btn primary', onclick: save }, 'Сохранить'),
+    h('button', { class: 'btn', onclick: openSettings }, 'Назад'));
+  input.focus();
+}
+
+function deleteCategorySheet(c) {
+  const n = items.filter((i) => i.category === c).length;
+  openSheet(h('h3', null, `Удалить категорию «${c}»?`),
+    h('p', { class: 'note', style: 'font-size:15px' }, n ? `${n} ${plural(n, 'мем останется', 'мема останутся', 'мемов останутся')} во вкладке «Все», просто без категории.` : 'В ней нет мемов.'),
+    h('button', { class: 'btn danger', onclick: async () => {
+      const changed = items.filter((i) => i.category === c);
+      changed.forEach((i) => { i.category = ''; });
+      await saveItems(changed);
+      categories = categories.filter((x) => x !== c);
+      await kvSet('categories', categories);
+      render();
+      openSettings();
+    } }, 'Удалить категорию'),
+    h('button', { class: 'btn', onclick: openSettings }, 'Назад'));
+}
+
+/* =========================================================
+   Добавление файлов + превью
+   ========================================================= */
+function detectKind(file) {
+  const t = (file.type || '').toLowerCase();
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  if (t === 'image/gif' || ext === 'gif') return 'gif';
+  if (t.startsWith('video/') || ['mp4', 'mov', 'm4v', 'webm', '3gp', 'mkv'].includes(ext)) return 'video';
+  if (t.startsWith('image/') || ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif', 'avif', 'bmp'].includes(ext)) return 'image';
+  return null;
+}
+function guessMime(name, kind) {
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  return ({ mp4: 'video/mp4', m4v: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm', gif: 'image/gif', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', heic: 'image/heic' })[ext]
+    || (kind === 'video' ? 'video/mp4' : 'image/jpeg');
+}
+function baseName(name) {
+  return (name || '').replace(/\.[^.]+$/, '').replace(/[_]+/g, ' ').trim().slice(0, 80) || 'Мем';
+}
+
+function drawCover(src, w, h) {
+  const c = document.createElement('canvas');
+  c.width = c.height = THUMB;
+  const ctx = c.getContext('2d');
+  const s = Math.max(THUMB / w, THUMB / h);
+  const dw = w * s, dh = h * s;
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, THUMB, THUMB);
+  ctx.drawImage(src, (THUMB - dw) / 2, (THUMB - dh) / 2, dw, dh);
+  return c.toDataURL('image/jpeg', 0.78);
+}
+
+function imageThumb(blob) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      let thumb = null;
+      try { thumb = drawCover(img, img.naturalWidth, img.naturalHeight); } catch (e) {}
+      URL.revokeObjectURL(url);
+      resolve({ thumb });
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve({ thumb: null, broken: true }); };
+    img.src = url;
+  });
+}
+
+function videoThumb(blob) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(blob);
+    const v = document.createElement('video');
+    v.muted = true;
+    v.playsInline = true;
+    v.setAttribute('playsinline', '');
+    v.setAttribute('webkit-playsinline', '');
+    v.preload = 'auto';
+    // iOS охотнее декодирует кадр, если видео лежит в документе
+    v.style.cssText = 'position:fixed;left:-10px;top:-10px;width:2px;height:2px;opacity:0;pointer-events:none';
+    document.body.append(v);
+    let done = false, target = 0;
+    const tryDraw = () => {
+      if (!v.videoWidth) return null;
+      try { return drawCover(v, v.videoWidth, v.videoHeight); } catch (e) { return null; }
+    };
+    const finish = (thumb) => {
+      if (done) return;
+      done = true;
+      clearTimeout(to); clearTimeout(kick);
+      const duration = isFinite(v.duration) ? v.duration : 0;
+      v.pause();
+      v.removeAttribute('src');
+      v.load();
+      v.remove();
+      URL.revokeObjectURL(url);
+      resolve({ thumb, duration });
+    };
+    const to = setTimeout(() => finish(tryDraw()), 9000);
+    // запасной вариант для капризных браузеров: «пнуть» видео коротким беззвучным play
+    const kick = setTimeout(() => {
+      v.play().then(() => { v.pause(); v.currentTime = target; }).catch(() => {});
+    }, 2500);
+    v.addEventListener('loadedmetadata', () => {
+      const d = isFinite(v.duration) ? v.duration : 2;
+      target = Math.min(1, d / 2);   // кадр с 1-й секунды (или с середины, если ролик короче 2 с)
+      v.currentTime = target;
+    });
+    v.addEventListener('seeked', () => {
+      // дать браузеру отрисовать кадр
+      requestAnimationFrame(() => setTimeout(() => finish(tryDraw()), 60));
+    });
+    v.addEventListener('error', () => finish(null));
+    v.src = url;
+    v.load();
+  });
+}
+
+async function makeThumb(blob, kind) {
+  return kind === 'video' ? videoThumb(blob) : imageThumb(blob);
+}
+
+async function requestPersist() {
+  try {
+    if (navigator.storage && navigator.storage.persist) {
+      if (await navigator.storage.persisted()) return true;
+      return await navigator.storage.persist();
+    }
+  } catch (e) {}
+  return false;
+}
+
+let adding = false;
+async function addFiles(fileList) {
+  const files = [...fileList];
+  if (!files.length || adding) return;
+  adding = true;
+  requestPersist();
+  const cat = currentCategory();
+  let order = nextOrder();
+  let ok = 0, bad = 0, quota = false;
+  for (let k = 0; k < files.length; k++) {
+    const f = files[k];
+    toast(files.length > 1 ? `Добавляю ${k + 1} из ${files.length}…` : 'Добавляю…', 0);
+    const kind = detectKind(f);
+    if (!kind) { bad++; continue; }
+    try {
+      const mime = f.type || guessMime(f.name, kind);
+      const blob = f.type ? f : new Blob([f], { type: mime });
+      const info = await makeThumb(blob, kind);
+      if (info.broken) { bad++; continue; }   // например, HEIC в Chrome на Android
+      const item = {
+        id: uid(), name: baseName(f.name), category: cat, kind, mime, size: f.size,
+        duration: info.duration || 0, thumb: info.thumb || '', count: 0, order: order++, created: Date.now(),
+      };
+      await putItemWithFile(item, blob);
+      items.push(item);
+      ok++;
+      if (k % 4 === 3) render();
+    } catch (e) {
+      console.error(e);
+      if (isQuota(e)) { quota = true; break; }
+      bad++;
+    }
+  }
+  adding = false;
+  render();
+  if (quota) toast('Не хватает места в хранилище браузера. Удали лишнее или сделай бэкап.', 4500);
+  else if (bad) toast(`Добавлено: ${ok}. Не получилось: ${bad}`, 3500);
+  else toast(ok === 1 ? 'Добавлено. Долгий тап — переименовать' : `Добавлено: ${ok}`, 2600);
+}
+
+/* =========================================================
+   Бэкап в ZIP (JSZip с cdnjs, кэшируется service worker'ом)
+   ========================================================= */
+let jszipP = null;
+function loadJSZip() {
+  if (window.JSZip) return Promise.resolve(window.JSZip);
+  if (!jszipP) {
+    jszipP = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = JSZIP_URL;
+      s.integrity = JSZIP_SRI;
+      s.crossOrigin = 'anonymous';
+      s.onload = () => resolve(window.JSZip);
+      s.onerror = () => { jszipP = null; s.remove(); reject(new Error('Не загрузилась библиотека для ZIP. Подключись к интернету один раз и попробуй снова.')); };
+      document.head.append(s);
+    });
+  }
+  return jszipP;
+}
+function extFor(it) {
+  const m = (it.mime || '').toLowerCase();
+  return ({ 'video/mp4': 'mp4', 'video/quicktime': 'mov', 'video/webm': 'webm', 'image/gif': 'gif', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic' })[m]
+    || (m.split('/')[1] || 'bin').replace(/[^a-z0-9]/g, '').slice(0, 5);
+}
+function progressSheet(title) {
+  const bar = h('div', { style: 'width:0%' });
+  const label = h('div', { class: 'note', style: 'margin:0' }, 'Подготовка…');
+  openSheet(h('h3', null, title), h('div', { class: 'card' }, h('div', { class: 'meter' }, bar), label));
+  return (pct, text) => { bar.style.width = Math.max(1, pct) + '%'; if (text) label.textContent = text; };
+}
+
+async function exportZip() {
+  let JSZip;
+  try { JSZip = await loadJSZip(); } catch (e) { toast(e.message, 4000); return; }
+  const set = progressSheet('Экспорт');
+  try {
+    const zip = new JSZip();
+    const meta = { app: 'meme-deck', format: 1, exported: new Date().toISOString(), categories, items: [] };
+    for (let k = 0; k < items.length; k++) {
+      const it = items[k];
+      set((k / items.length) * 30, `Читаю файлы: ${k + 1} из ${items.length}`);
+      const blob = await getBlob(it.id);
+      if (!blob) continue;
+      const file = `media/${it.id}.${extFor(it)}`;
+      zip.file(file, blob, { binary: true });
+      meta.items.push(Object.assign({}, it, { file }));
+    }
+    zip.file('deck.json', JSON.stringify(meta));
+    const out = await zip.generateAsync({ type: 'blob', compression: 'STORE', streamFiles: true },
+      (m) => set(30 + m.percent * 0.7, `Упаковываю: ${Math.round(m.percent)}%`));
+    const d = new Date();
+    const name = `meme-deck-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}.zip`;
+    const file = new File([out], name, { type: 'application/zip' });
+    // Сохранение — отдельной кнопкой: iOS разрешает «Поделиться» только сразу после тапа
+    openSheet(h('h3', null, 'Архив готов'),
+      h('div', { class: 'card' }, h('b', null, name), h('div', { class: 'note', style: 'margin:4px 0 0' }, `${meta.items.length} ${plural(meta.items.length, 'мем', 'мема', 'мемов')} · ${fmtBytes(out.size)}`)),
+      h('button', { class: 'btn primary', onclick: () => saveFile(file) }, isIOS ? 'Сохранить в «Файлы»' : 'Скачать файл'),
+      h('button', { class: 'btn', onclick: () => closeTop() }, 'Закрыть'));
+  } catch (e) {
+    console.error(e);
+    openSheet(h('h3', null, 'Экспорт не удался'),
+      h('p', { class: 'note', style: 'font-size:15px' }, 'Скорее всего, не хватило памяти телефона для такого большого архива. Попробуй удалить тяжелые видео или сделать экспорт с компьютера.'),
+      h('button', { class: 'btn', onclick: () => closeTop() }, 'Закрыть'));
+  }
+}
+
+function saveFile(file) {
+  if (isIOS && navigator.canShare && navigator.canShare({ files: [file] })) {
+    navigator.share({ files: [file] }).catch((e) => { if (e.name !== 'AbortError') downloadFile(file); });
+    return;
+  }
+  downloadFile(file);
+}
+function downloadFile(file) {
+  const url = URL.createObjectURL(file);
+  const a = h('a', { href: url, download: file.name, style: 'display:none' });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+async function importZip(file) {
+  let JSZip;
+  try { JSZip = await loadJSZip(); } catch (e) { toast(e.message, 4000); return; }
+  const set = progressSheet('Импорт');
+  try {
+    const zip = await JSZip.loadAsync(file);
+    const metaFile = zip.file('deck.json');
+    if (!metaFile) throw new Error('Это не архив Meme Deck (нет deck.json)');
+    const meta = JSON.parse(await metaFile.async('string'));
+    const have = new Set(items.map((i) => i.id));
+    let order = nextOrder(), added = 0, skipped = 0;
+    const list = Array.isArray(meta.items) ? meta.items : [];
+    for (let k = 0; k < list.length; k++) {
+      const m = list[k];
+      set((k / Math.max(list.length, 1)) * 100, `Добавляю: ${k + 1} из ${list.length}`);
+      if (!m || !m.id || have.has(m.id)) { skipped++; continue; }
+      const entry = m.file && zip.file(m.file);
+      if (!entry) { skipped++; continue; }
+      const raw = await entry.async('blob');
+      const blob = new Blob([raw], { type: m.mime || '' });
+      const kind = ['video', 'image', 'gif'].includes(m.kind) ? m.kind : (detectKind({ type: m.mime || '', name: m.file }) || 'image');
+      let thumb = typeof m.thumb === 'string' && m.thumb.startsWith('data:image/') ? m.thumb : '';
+      let duration = +m.duration || 0;
+      if (!thumb) { const info = await makeThumb(blob, kind); thumb = info.thumb || ''; duration = info.duration || duration; }
+      const item = {
+        id: String(m.id), name: String(m.name || 'Мем').slice(0, 80), category: String(m.category || '').slice(0, 30), kind,
+        mime: m.mime || blob.type, size: blob.size, duration, thumb, count: +m.count || 0, order: order++,
+        created: +m.created || Date.now(), lastUsed: +m.lastUsed || 0,
+      };
+      await putItemWithFile(item, blob);
+      items.push(item);
+      have.add(item.id);
+      added++;
+    }
+    for (const c of meta.categories || []) if (typeof c === 'string' && c && !categories.includes(c)) categories.push(c);
+    await syncCategories();
+    sortItems();
+    render();
+    requestPersist();
+    openSheet(h('h3', null, 'Импорт завершен'),
+      h('p', { style: 'margin:0 2px 6px' }, `Добавлено: ${added}` + (skipped ? `. Пропущено (уже есть): ${skipped}` : '')),
+      h('button', { class: 'btn primary', onclick: () => closeTop() }, 'Отлично'));
+  } catch (e) {
+    console.error(e);
+    render();
+    openSheet(h('h3', null, 'Импорт не удался'),
+      h('p', { class: 'note', style: 'font-size:15px' }, isQuota(e) ? 'Не хватило места в хранилище браузера.' : (e.message || 'Файл поврежден или это не архив Meme Deck.')),
+      h('button', { class: 'btn', onclick: () => closeTop() }, 'Закрыть'));
+  }
+}
+
+/* =========================================================
+   Поиск и кнопки
+   ========================================================= */
+const searchEl = $('#search'), qEl = $('#q');
+function openSearch() {
+  searchEl.classList.add('open');
+  qEl.focus();
+  renderBar();
+}
+function closeSearch(clear = true) {
+  searchEl.classList.remove('open');
+  if (clear && query) { query = ''; qEl.value = ''; renderGrid(); }
+  qEl.blur();
+  renderBar();
+}
+$('#btnSearch').addEventListener('click', () => (searchEl.classList.contains('open') ? closeSearch(true) : openSearch()));
+qEl.addEventListener('input', () => { query = qEl.value.trim(); renderGrid(); renderBar(); });
+qEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') qEl.blur(); });
+$('#qClear').addEventListener('click', () => { if (qEl.value) { qEl.value = ''; query = ''; renderGrid(); qEl.focus(); } else closeSearch(true); });
+
+$('#btnAdd').addEventListener('click', () => $('#filePick').click());
+$('#filePick').addEventListener('change', (e) => { const f = e.target.files; addFiles(f).finally(() => { e.target.value = ''; }); });
+$('#zipPick').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) importZip(f); });
+$('#btnSettings').addEventListener('click', openSettings);
+$('#btnEdit').addEventListener('click', () => setEditMode(true));
+
+/* =========================================================
+   Старт
+   ========================================================= */
+(async function init() {
+  try {
+    db = await openDB();
+    items = await dbAll('items');
+    sortItems();
+    categories = (await kvGet('categories')) || [];
+    await syncCategories();
+  } catch (e) {
+    console.error(e);
+    toast('Хранилище недоступно (приватный режим?) — мемы не сохранятся', 6000);
+    items = [];
+  }
+  render();
+  if (items.length) requestPersist();
+})();
+
+if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}
+</script>
+</body>
+</html>
